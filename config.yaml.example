@@ -1,0 +1,32 @@
+# Sync Agent Configuration
+# Token values support ${ENV_VAR} substitution
+
+forgejo:
+  url: "http://localhost:2000"
+  token: "${FORGEJO_TOKEN}"
+
+platforms:
+  github:
+    token: "${GITHUB_TOKEN}"
+  codeberg:
+    token: "${CODEBERG_TOKEN}"
+  gitlab:
+    token: "${GITLAB_TOKEN}"
+
+import:
+  enabled: true
+  schedule: "hourly"  # hourly | daily | cron expression
+  # Organisations whose repos should also be imported
+  organisations: []
+
+push_mirrors:
+  enabled: true
+  targets:
+    - github
+    - codeberg
+    # - gitlab
+
+webhook:
+  enabled: true
+  host: "127.0.0.1"
+  port: 9123
