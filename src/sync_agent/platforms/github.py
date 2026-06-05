@@ -4,24 +4,20 @@ from __future__ import annotations
 
 from typing import Any
 
-import httpx
-
 from sync_agent.platforms.base import PlatformProvider, PlatformRepo
+from sync_agent.retry import AsyncRetryClient
 
 
 class GitHubProvider(PlatformProvider):
-    """Provider for github.com."""
+    """Provider for github.com with automatic retry."""
 
     name = "github"
 
-    def __init__(self, token: str):
-        self._client = httpx.Client(
+    def __init__(self, token: str, *, max_attempts: int = 3):
+        self._client = AsyncRetryClient(
             base_url="https://api.github.com",
-            headers={
-                "Authorization": f"Bearer {token}",
-                "Accept": "application/vnd.github.v3+json",
-                "User-Agent": "sync-agent/0.1",
-            },
+            token=token,
+            max_attempts=max_attempts,
         )
 
     def list_repos(self) -> list[PlatformRepo]:
@@ -29,7 +25,7 @@ class GitHubProvider(PlatformProvider):
         # Personal repos
         repos.extend(self._fetch_repos("/user/repos"))
         # Organisation repos
-        orgs = self._client.get("/user/orgs").json()
+        orgs = self._client.get("/user/orgs")
         for org in orgs:
             org_repos = self._fetch_repos(f"/orgs/{org['login']}/repos")
             repos.extend(org_repos)
@@ -44,25 +40,26 @@ class GitHubProvider(PlatformProvider):
             "description": description,
             "auto_init": False,
         }
-        resp = self._client.post("/user/repos", json=payload)
-        resp.raise_for_status()
-        data = resp.json()
+        data = self._client.post("/user/repos", json=payload)
         return self._parse_repo(data)
 
     def repo_exists(self, name: str, owner: str | None = None) -> bool:
         if owner:
-            resp = self._client.get(f"/repos/{owner}/{name}")
-        else:
-            # Search for it
-            resp = self._client.get(
+            try:
+                self._client.get(f"/repos/{owner}/{name}")
+                return True
+            except Exception:
+                return False
+        # Search fallback
+        try:
+            data = self._client.get(
                 "/search/repositories",
                 params={"q": f"{name} in:name fork:true"},
             )
-            if resp.status_code == 200:
-                items = resp.json().get("items", [])
-                return any(r["name"] == name for r in items)
+            items = data.get("items", [])
+            return any(r["name"] == name for r in items)
+        except Exception:
             return False
-        return resp.status_code == 200
 
     def ssh_push_url(self, repo: PlatformRepo) -> str:
         return f"git@github.com:{repo.owner}/{repo.name}.git"
@@ -73,9 +70,9 @@ class GitHubProvider(PlatformProvider):
         repos: list[PlatformRepo] = []
         page = 1
         while True:
-            resp = self._client.get(path, params={"page": page, "per_page": 100})
-            resp.raise_for_status()
-            data = resp.json()
+            data = self._client.get(
+                path, params={"page": page, "per_page": 100}
+            )
             if not data:
                 break
             for r in data:

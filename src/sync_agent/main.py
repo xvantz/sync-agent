@@ -15,6 +15,7 @@ from sync_agent.platforms.github import GitHubProvider
 from sync_agent.platforms.gitlab import GitLabProvider
 from sync_agent.pusher import Pusher
 from sync_agent.reconciler import Reconciler
+from sync_agent.server import run_api_server
 from sync_agent.webhook import run_webhook
 
 logger = logging.getLogger("sync_agent")
@@ -248,6 +249,23 @@ def webhook(ctx: click.Context, port: int, host: str) -> None:
     platforms = _init_platforms(cfg)
     try:
         run_webhook(forgejo, platforms, host=host, port=port)
+    finally:
+        forgejo.close()
+        for p in platforms.values():
+            p.close()
+
+
+@cli.command()
+@click.option("--port", default=9124, help="API server port")
+@click.option("--host", default="127.0.0.1", help="API server host")
+@click.pass_context
+def serve(ctx: click.Context, port: int, host: str) -> None:
+    """Start the management API server (status, sync trigger)."""
+    cfg: Config = ctx.obj["cfg"]
+    forgejo = ForgejoClient(cfg.forgejo_url, cfg.forgejo_token)
+    platforms = _init_platforms(cfg)
+    try:
+        run_api_server(forgejo, platforms, cfg, host=host, port=port)
     finally:
         forgejo.close()
         for p in platforms.values():

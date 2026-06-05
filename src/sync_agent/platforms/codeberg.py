@@ -1,34 +1,29 @@
-"""Codeberg provider — uses Gitea API (same as Forgejo)."""
+"""Codeberg provider — uses Gitea API (same as Forgejo), with retry."""
 
 from __future__ import annotations
 
 from typing import Any
 
-import httpx
-
 from sync_agent.platforms.base import PlatformProvider, PlatformRepo
+from sync_agent.retry import AsyncRetryClient
 
 
 class CodebergProvider(PlatformProvider):
-    """Provider for codeberg.org."""
+    """Provider for codeberg.org with automatic retry."""
 
     name = "codeberg"
 
-    def __init__(self, token: str):
-        self._client = httpx.Client(
+    def __init__(self, token: str, *, max_attempts: int = 3):
+        self._client = AsyncRetryClient(
             base_url="https://codeberg.org/api/v1",
-            headers={
-                "Authorization": f"token {token}",
-                "Content-Type": "application/json",
-            },
+            token=token,
+            max_attempts=max_attempts,
         )
 
     def list_repos(self) -> list[PlatformRepo]:
         repos: list[PlatformRepo] = []
-        # Personal repos
         repos.extend(self._fetch_repos("/user/repos"))
-        # Organisation repos
-        orgs = self._client.get("/user/orgs").json()
+        orgs = self._client.get("/user/orgs")
         for org in orgs:
             org_repos = self._fetch_repos(f"/orgs/{org['login']}/repos")
             repos.extend(org_repos)
@@ -43,17 +38,18 @@ class CodebergProvider(PlatformProvider):
             "description": description,
             "auto_init": False,
         }
-        resp = self._client.post("/user/repos", json=payload)
-        resp.raise_for_status()
-        return self._parse_repo(resp.json())
+        data = self._client.post("/user/repos", json=payload)
+        return self._parse_repo(data)
 
     def repo_exists(self, name: str, owner: str | None = None) -> bool:
-        if not owner:
-            # Fallback: list and check
-            repos = self.list_repos()
-            return any(r.name == name for r in repos)
-        resp = self._client.get(f"/repos/{owner}/{name}")
-        return resp.status_code == 200
+        if owner:
+            try:
+                self._client.get(f"/repos/{owner}/{name}")
+                return True
+            except Exception:
+                return False
+        repos = self.list_repos()
+        return any(r.name == name for r in repos)
 
     def ssh_push_url(self, repo: PlatformRepo) -> str:
         return f"git@codeberg.org:{repo.owner}/{repo.name}.git"
@@ -64,11 +60,9 @@ class CodebergProvider(PlatformProvider):
         repos: list[PlatformRepo] = []
         page = 1
         while True:
-            resp = self._client.get(
+            data = self._client.get(
                 path, params={"page": page, "limit": 50}
             )
-            resp.raise_for_status()
-            data = resp.json()
             if not data:
                 break
             for r in data:

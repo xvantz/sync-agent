@@ -1,42 +1,34 @@
-"""GitLab platform provider."""
+"""GitLab platform provider with retry."""
 
 from __future__ import annotations
 
 from typing import Any
 
-import httpx
-
 from sync_agent.platforms.base import PlatformProvider, PlatformRepo
+from sync_agent.retry import AsyncRetryClient
 
 
 class GitLabProvider(PlatformProvider):
-    """Provider for gitlab.com."""
+    """Provider for gitlab.com with automatic retry."""
 
     name = "gitlab"
 
-    def __init__(self, token: str):
-        self._client = httpx.Client(
+    def __init__(self, token: str, *, max_attempts: int = 3):
+        self._client = AsyncRetryClient(
             base_url="https://gitlab.com/api/v4",
-            headers={
-                "Authorization": f"Bearer {token}",
-                "Content-Type": "application/json",
-            },
+            token=token,
+            max_attempts=max_attempts,
         )
 
     def list_repos(self) -> list[PlatformRepo]:
         repos: list[PlatformRepo] = []
-
-        # Owned projects
         repos.extend(self._fetch_repos("/projects", {"owned": "true"}))
-
-        # Group (organisation) projects
-        groups = self._client.get("/groups").json()
+        groups = self._client.get("/groups")
         for group in groups:
             group_repos = self._fetch_repos(
                 f"/groups/{group['id']}/projects"
             )
             repos.extend(group_repos)
-
         return repos
 
     def create_repo(
@@ -47,26 +39,19 @@ class GitLabProvider(PlatformProvider):
             "visibility": "private" if private else "public",
             "description": description,
         }
-        resp = self._client.post("/projects", json=payload)
-        resp.raise_for_status()
-        return self._parse_repo(resp.json())
+        data = self._client.post("/projects", json=payload)
+        return self._parse_repo(data)
 
     def repo_exists(self, name: str, owner: str | None = None) -> bool:
+        params: dict[str, str] = {"search": name}
         if owner:
-            resp = self._client.get(
-                "/projects", params={"search": name}
-            )
-            if resp.status_code == 200:
-                projects = resp.json()
-                return any(p["path"] == name for p in projects)
+            pass  # GitLab search works globally within user scope
+        params["owned"] = "true"
+        try:
+            data = self._client.get("/projects", params=params)
+            return any(p["path"] == name for p in data)
+        except Exception:
             return False
-        resp = self._client.get(
-            "/projects", params={"search": name, "owned": "true"}
-        )
-        if resp.status_code == 200:
-            projects = resp.json()
-            return any(p["path"] == name for p in projects)
-        return False
 
     def ssh_push_url(self, repo: PlatformRepo) -> str:
         return f"git@gitlab.com:{repo.owner}/{repo.name}.git"
@@ -80,9 +65,9 @@ class GitLabProvider(PlatformProvider):
         page = 1
         params = {"per_page": "100", **(extra_params or {})}
         while True:
-            resp = self._client.get(path, params={**params, "page": str(page)})
-            resp.raise_for_status()
-            data = resp.json()
+            data = self._client.get(
+                path, params={**params, "page": str(page)}
+            )
             if not data:
                 break
             for r in data:

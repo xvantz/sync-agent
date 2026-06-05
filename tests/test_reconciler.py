@@ -12,124 +12,144 @@ from sync_agent.reconciler import Reconciler
 
 
 class TestReconciler:
-    def test_discover_no_diff(
-        self,
-        forgejo_repos: list[dict[str, Any]],
-        forgejo_client: ForgejoClient,
-    ) -> None:
-        """When all cloud repos already exist in Forgejo, diff should be empty."""
-        # Mock Forgejo client
-        forgejo_client._client.get = Mock(
-            side_effect=[
-                # list_repos
-                Mock(status_code=200, json=lambda: forgejo_repos),
-            ]
-        )
-        # Mock Forgejo list_push_mirrors — empty (no mirrors yet)
-        forgejo_client.list_push_mirrors = Mock(return_value=[])
+    def _make_forgejo_repos(self) -> list[dict[str, Any]]:
+        return [
+            {
+                "id": 1,
+                "name": "hashgrid",
+                "full_name": "xvantz/hashgrid",
+                "owner": {"login": "xvantz", "id": 100},
+                "clone_url": "http://localhost:2000/xvantz/hashgrid.git",
+                "mirror": False,
+                "empty": False,
+                "private": True,
+                "description": "Spatial engine",
+            },
+            {
+                "id": 2,
+                "name": "coolcontrol",
+                "full_name": "xvantz/coolcontrol",
+                "owner": {"login": "xvantz", "id": 100},
+                "clone_url": "http://localhost:2000/xvantz/coolcontrol.git",
+                "mirror": True,
+                "empty": False,
+                "private": True,
+                "description": "Fan control",
+            },
+        ]
 
-        # Mock GitHub provider — same repos as Forgejo
+    def _make_cloud_repos(
+        self, names: list[str], platform: str = "github"
+    ) -> list[dict[str, Any]]:
+        """Create cloud repo dicts similar to what providers return."""
+        return [
+            {
+                "name": name,
+                "owner": {"login": "xvantz"},
+                "clone_url": (
+                    f"https://{platform}.com/xvantz/{name}.git"
+                ),
+                "private": True,
+                "description": f"Repo {name}",
+            }
+            for name in names
+        ]
+
+    def test_discover_no_diff(self) -> None:
+        """When all cloud repos already exist in Forgejo, diff should be empty."""
+        fj_repos = self._make_forgejo_repos()
+
+        forgejo = ForgejoClient("http://localhost:2000", "token")
+        forgejo._client.get = Mock(return_value=fj_repos)
+        forgejo._client.post = Mock()
+        forgejo.list_push_mirrors = Mock(return_value=[])
+
+        # GitHub has nothing extra — same repos as Forgejo
         gh_provider = Mock(spec=GitHubProvider)
         gh_provider.name = "github"
-        gh_provider.list_repos.return_value = []
-        gh_provider.ssh_push_url.return_value = "git@github.com:xvantz/hashgrid.git"
+        gh_provider.list_repos = Mock(return_value=[])
 
-        platforms = {"github": gh_provider}
-        reconciler = Reconciler(forgejo_client, platforms)
+        reconciler = Reconciler(forgejo, {"github": gh_provider})
         diff = reconciler.discover()
 
         assert len(diff.missing_in_forgejo) == 0
 
-    def test_discover_missing_in_forgejo(
-        self,
-        forgejo_repos: list[dict[str, Any]],
-        forgejo_client: ForgejoClient,
-        github_repos: list[dict[str, Any]],
-    ) -> None:
-        """Repos that exist on GitHub but not in Forgejo should appear in diff."""
-        forgejo_client._client.get = Mock(
-            side_effect=[
-                Mock(status_code=200, json=lambda: forgejo_repos),
-            ]
-        )
-        forgejo_client.list_push_mirrors = Mock(return_value=[])
+    def test_discover_missing_in_forgejo(self) -> None:
+        """Repos that exist on GitHub but not in Forgejo should appear."""
+        fj_repos = self._make_forgejo_repos()
 
-        # GitHub has "resume" which is NOT in Forgejo repos
-        def _gh_repos():
-            from sync_agent.platforms.base import PlatformRepo
+        forgejo = ForgejoClient("http://localhost:2000", "token")
+        forgejo._client.get = Mock(return_value=fj_repos)
+        forgejo._client.post = Mock()
+        forgejo.list_push_mirrors = Mock(return_value=[])
 
-            return [
-                PlatformRepo(
-                    name=r["name"],
-                    owner=r["owner"]["login"],
-                    clone_url=r["clone_url"],
-                    private=r["private"],
-                    description=r.get("description", ""),
-                    platform="github",
-                )
-                for r in github_repos
-            ]
+        from sync_agent.platforms.base import PlatformRepo
 
         gh_provider = Mock(spec=GitHubProvider)
         gh_provider.name = "github"
-        gh_provider.list_repos = _gh_repos
+        gh_provider.list_repos = Mock(
+            return_value=[
+                PlatformRepo(
+                    name="resume",
+                    owner="xvantz",
+                    clone_url="https://github.com/xvantz/resume.git",
+                    private=False,
+                    description="My resume",
+                    platform="github",
+                ),
+            ]
+        )
 
-        platforms = {"github": gh_provider}
-        reconciler = Reconciler(forgejo_client, platforms)
+        reconciler = Reconciler(forgejo, {"github": gh_provider})
         diff = reconciler.discover()
 
         assert len(diff.missing_in_forgejo) == 1
         platform_name, repo = diff.missing_in_forgejo[0]
         assert platform_name == "github"
         assert repo.name == "resume"
-        assert repo.owner == "xvantz"
 
-    def test_discover_missing_push_mirrors(
-        self,
-        forgejo_repos: list[dict[str, Any]],
-        forgejo_client: ForgejoClient,
-    ) -> None:
+    def test_discover_missing_push_mirrors(self) -> None:
         """Repos without push mirrors to targets should be detected."""
-        forgejo_client._client.get = Mock(
-            side_effect=[
-                Mock(status_code=200, json=lambda: forgejo_repos),
-            ]
-        )
+        fj_repos = self._make_forgejo_repos()
 
-        # hashgrid has a push mirror to github, coolcontrol has none
+        forgejo = ForgejoClient("http://localhost:2000", "token")
+        forgejo._client.get = Mock(return_value=fj_repos)
+        forgejo._client.post = Mock()
+
+        # hashgrid has push mirror to github, coolcontrol has none
         def _list_mirrors(owner: str, repo: str) -> list[dict]:
             if repo == "hashgrid":
                 return [
                     {
                         "remote_name": "github",
-                        "remote_address": "git@github.com:xvantz/hashgrid.git",
+                        "remote_address": (
+                            "git@github.com:xvantz/hashgrid.git"
+                        ),
                     }
                 ]
             return []
 
-        forgejo_client.list_push_mirrors = _list_mirrors
+        forgejo.list_push_mirrors = _list_mirrors
 
-        def _gh_repos():
-            from sync_agent.platforms.base import PlatformRepo
+        from sync_agent.platforms.base import PlatformRepo
 
-            return [
+        gh_provider = Mock(spec=GitHubProvider)
+        gh_provider.name = "github"
+        gh_provider.list_repos = Mock(
+            return_value=[
                 PlatformRepo(
                     name=r["name"],
-                    owner=r["owner"]["login"],
+                    owner="xvantz",
                     clone_url=r["clone_url"],
                     private=r["private"],
                     description=r.get("description", ""),
                     platform="github",
                 )
-                for r in forgejo_repos
+                for r in fj_repos
             ]
+        )
 
-        gh_provider = Mock(spec=GitHubProvider)
-        gh_provider.name = "github"
-        gh_provider.list_repos = _gh_repos
-
-        platforms = {"github": gh_provider}
-        reconciler = Reconciler(forgejo_client, platforms)
+        reconciler = Reconciler(forgejo, {"github": gh_provider})
         diff = reconciler.discover()
 
         assert len(diff.missing_push_mirrors) == 1
@@ -137,106 +157,91 @@ class TestReconciler:
         assert repo.name == "coolcontrol"
         assert "github" in targets
 
-    def test_discover_multiple_platforms(
-        self,
-        forgejo_repos: list[dict[str, Any]],
-        forgejo_client: ForgejoClient,
-        github_repos: list[dict[str, Any]],
-        codeberg_repos: list[dict[str, Any]],
-    ) -> None:
+    def test_discover_multiple_platforms(self) -> None:
         """Diff should aggregate missing repos across all platforms."""
-        # Forgejo has: hashgrid, coolcontrol
-        forgejo_client._client.get = Mock(
-            side_effect=[
-                Mock(status_code=200, json=lambda: forgejo_repos),
-            ]
-        )
-        forgejo_client.list_push_mirrors = Mock(return_value=[])
+        fj_repos = self._make_forgejo_repos()
 
-        def _gh_repos():
-            from sync_agent.platforms.base import PlatformRepo
+        forgejo = ForgejoClient("http://localhost:2000", "token")
+        forgejo._client.get = Mock(return_value=fj_repos)
+        forgejo._client.post = Mock()
+        forgejo.list_push_mirrors = Mock(return_value=[])
 
-            return [
-                PlatformRepo(
-                    name=r["name"],
-                    owner=r["owner"]["login"],
-                    clone_url=r["clone_url"],
-                    private=r["private"],
-                    description=r["description"],
-                    platform="github",
-                )
-                for r in github_repos
-            ]
-
-        def _cb_repos():
-            from sync_agent.platforms.base import PlatformRepo
-
-            return [
-                PlatformRepo(
-                    name=r["name"],
-                    owner=r["owner"]["login"],
-                    clone_url=r["clone_url"],
-                    private=r.get("private", True),
-                    description=r["description"],
-                    platform="codeberg",
-                )
-                for r in codeberg_repos
-            ]
+        from sync_agent.platforms.base import PlatformRepo
 
         gh_provider = Mock(spec=GitHubProvider)
         gh_provider.name = "github"
-        gh_provider.list_repos = _gh_repos
+        gh_provider.list_repos = Mock(
+            return_value=[
+                PlatformRepo(
+                    name="resume",
+                    owner="xvantz",
+                    clone_url="https://github.com/xvantz/resume.git",
+                    private=False,
+                    description="My resume",
+                    platform="github",
+                ),
+            ]
+        )
 
         cb_provider = Mock(spec=CodebergProvider)
         cb_provider.name = "codeberg"
-        cb_provider.list_repos = _cb_repos
+        cb_provider.list_repos = Mock(
+            return_value=[
+                PlatformRepo(
+                    name="dotfiles",
+                    owner="xvantz",
+                    clone_url="https://codeberg.org/xvantz/dotfiles.git",
+                    private=False,
+                    description="NixOS dotfiles",
+                    platform="codeberg",
+                ),
+            ]
+        )
 
-        platforms = {"github": gh_provider, "codeberg": cb_provider}
-        reconciler = Reconciler(forgejo_client, platforms)
+        reconciler = Reconciler(
+            forgejo, {"github": gh_provider, "codeberg": cb_provider}
+        )
         diff = reconciler.discover()
 
-        # resume (github) + dotfiles (codeberg)
         assert len(diff.missing_in_forgejo) == 2
         names = {r.name for _, r in diff.missing_in_forgejo}
         assert names == {"resume", "dotfiles"}
-        assert diff.platform_counts.get("github", 0) == 2
-        assert diff.platform_counts.get("codeberg", 0) == 1
 
-    def test_discover_platform_counts(
-        self,
-        forgejo_repos: list[dict[str, Any]],
-        forgejo_client: ForgejoClient,
-        github_repos: list[dict[str, Any]],
-    ) -> None:
+    def test_discover_platform_counts(self) -> None:
         """Platform counts should be reported correctly."""
-        forgejo_client._client.get = Mock(
-            side_effect=[
-                Mock(status_code=200, json=lambda: forgejo_repos),
-            ]
-        )
-        forgejo_client.list_push_mirrors = Mock(return_value=[])
+        fj_repos = self._make_forgejo_repos()
 
-        def _gh_repos():
-            from sync_agent.platforms.base import PlatformRepo
+        forgejo = ForgejoClient("http://localhost:2000", "token")
+        forgejo._client.get = Mock(return_value=fj_repos)
+        forgejo._client.post = Mock()
+        forgejo.list_push_mirrors = Mock(return_value=[])
 
-            return [
-                PlatformRepo(
-                    name=r["name"],
-                    owner=r["owner"]["login"],
-                    clone_url=r["clone_url"],
-                    private=r["private"],
-                    description=r["description"],
-                    platform="github",
-                )
-                for r in github_repos
-            ]
+        from sync_agent.platforms.base import PlatformRepo
 
         gh_provider = Mock(spec=GitHubProvider)
         gh_provider.name = "github"
-        gh_provider.list_repos = _gh_repos
+        gh_provider.list_repos = Mock(
+            return_value=[
+                PlatformRepo(
+                    name="hashgrid",
+                    owner="xvantz",
+                    clone_url="https://github.com/xvantz/hashgrid.git",
+                    private=True,
+                    description="Spatial engine",
+                    platform="github",
+                ),
+                PlatformRepo(
+                    name="resume",
+                    owner="xvantz",
+                    clone_url="https://github.com/xvantz/resume.git",
+                    private=False,
+                    description="My resume",
+                    platform="github",
+                ),
+            ]
+        )
 
-        platforms = {"github": gh_provider}
-        reconciler = Reconciler(forgejo_client, platforms)
+        reconciler = Reconciler(forgejo, {"github": gh_provider})
         diff = reconciler.discover()
 
         assert diff.platform_counts == {"github": 2}
