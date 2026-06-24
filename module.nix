@@ -15,8 +15,12 @@ in
     };
 
     configFile = mkOption {
-      type = types.path;
-      description = "Path to sync-agent config.yaml.";
+      type = types.nullOr types.path;
+      default = null;
+      description = ''
+        Path to sync-agent config.yaml. When set, overrides all individual options below.
+        The config file supports ${ENV_VAR} substitution from environment files.
+      '';
     };
 
     forgejo.url = mkOption {
@@ -28,7 +32,7 @@ in
     forgejo.tokenFile = mkOption {
       type = types.nullOr types.path;
       default = null;
-      description = "Path to file containing Forgejo API token.";
+      description = "Path to file containing Forgejo API token. Sets FORGEJO_TOKEN env var.";
     };
 
     platforms = {
@@ -37,25 +41,23 @@ in
         tokenFile = mkOption {
           type = types.nullOr types.path;
           default = null;
-          description = "Path to file containing GitHub PAT.";
+          description = "Path to file containing GitHub PAT. Sets GITHUB_TOKEN env var.";
         };
       };
-
       codeberg = {
         enable = mkEnableOption "Codeberg sync";
         tokenFile = mkOption {
           type = types.nullOr types.path;
           default = null;
-          description = "Path to file containing Codeberg API token.";
+          description = "Path to file containing Codeberg API token. Sets CODEBERG_TOKEN env var.";
         };
       };
-
       gitlab = {
         enable = mkEnableOption "GitLab sync";
         tokenFile = mkOption {
           type = types.nullOr types.path;
           default = null;
-          description = "Path to file containing GitLab PAT.";
+          description = "Path to file containing GitLab PAT. Sets GITLAB_TOKEN env var.";
         };
       };
     };
@@ -99,54 +101,72 @@ in
   };
 
   config = lib.mkIf cfg.enable {
-    # Generate config.yaml from module options
+    # Generate config.yaml with env var placeholders — tokens are injected
+    # at runtime via systemd EnvironmentFile pointing to sops secrets.
     environment.etc."sync-agent/config.yaml".text =
       let
-        tokens = ''
-              forgejo:
-                url: "${cfg.forgejo.url}"
-                token: "${builtins.readFile cfg.forgejo.tokenFile}"
-
-              platforms:
-            ''
-            + lib.optionalString cfg.platforms.github.enable ''
-                github:
-                  token: "${builtins.readFile cfg.platforms.github.tokenFile}"
-            ''
-            + lib.optionalString cfg.platforms.codeberg.enable ''
-                codeberg:
-                  token: "${builtins.readFile cfg.platforms.codeberg.tokenFile}"
-            ''
-            + lib.optionalString cfg.platforms.gitlab.enable ''
-                gitlab:
-                  token: "${builtins.readFile cfg.platforms.gitlab.tokenFile}"
-            ''
-            + ''
-              import:
-                enabled: ${lib.boolToString cfg.import.enable}
-                organisations: [${lib.concatStringsSep "," cfg.import.organisations}]
-
-              push_mirrors:
-                enabled: ${lib.boolToString cfg.pushMirrors.enable}
-                targets: [${lib.concatStringsSep "," cfg.pushMirrors.targets}]
-
-              webhook:
-                enabled: ${lib.boolToString cfg.autoCreate.enable}
-                port: ${toString cfg.autoCreate.port}
-            '';
+        platforms_github = lib.optionalString cfg.platforms.github.enable ''
+            github:
+              token: "${"$"}{GITHUB_TOKEN}"
+        '';
+        platforms_codeberg = lib.optionalString cfg.platforms.codeberg.enable ''
+            codeberg:
+              token: "${"$"}{CODEBERG_TOKEN}"
+        '';
+        platforms_gitlab = lib.optionalString cfg.platforms.gitlab.enable ''
+            gitlab:
+              token: "${"$"}{GITLAB_TOKEN}"
+        '';
       in
-      tokens;
+      ''
+        forgejo:
+          url: "${cfg.forgejo.url}"
+          token: "${"$"}{FORGEJO_TOKEN}"
 
-    # Systemd service for the import timer
+        platforms:
+        ${platforms_github}
+        ${platforms_codeberg}
+        ${platforms_gitlab}
+
+        import:
+          enabled: ${lib.boolToString cfg.import.enable}
+          organisations: [${lib.concatStringsSep "," cfg.import.organisations}]
+
+        push_mirrors:
+          enabled: ${lib.boolToString cfg.pushMirrors.enable}
+          targets: [${lib.concatStringsSep "," cfg.pushMirrors.targets}]
+
+        webhook:
+          enabled: ${lib.boolToString cfg.autoCreate.enable}
+          port: ${toString cfg.autoCreate.port}
+      '';
+
+    # Collect environment files from tokenFile options
+    envFiles = lib.filter (x: x != null) [
+      cfg.forgejo.tokenFile
+      (if cfg.platforms.github.enable then cfg.platforms.github.tokenFile else null)
+      (if cfg.platforms.codeberg.enable then cfg.platforms.codeberg.tokenFile else null)
+      (if cfg.platforms.gitlab.enable then cfg.platforms.gitlab.tokenFile else null)
+    ];
+
+    # Use manual configFile if set, otherwise use generated one
+    effectiveConfig =
+      if cfg.configFile != null
+      then cfg.configFile
+      else "/etc/sync-agent/config.yaml";
+
+    # ── Import timer (oneshot) ─────────────────────────────────────
     systemd.services.sync-agent-import = lib.mkIf cfg.import.enable {
       description = "Sync Agent — Import repos from cloud platforms";
-      after = [ "network.target" "forgejo.service" ];
+      after = [ "network.target" ];
       wantedBy = [ "multi-user.target" ];
       serviceConfig = {
         Type = "oneshot";
         DynamicUser = true;
-        ExecStart = "${cfg.package}/bin/sync-agent -c /etc/sync-agent/config.yaml import";
+        ExecStart = "${cfg.package}/bin/sync-agent -c ${effectiveConfig} import";
         Restart = "on-failure";
+      } // lib.optionalAttrs (envFiles != []) {
+        EnvironmentFile = envFiles;
       };
     };
 
@@ -159,16 +179,42 @@ in
       };
     };
 
-    # Systemd service for the auto-create webhook
+    # ── Full sync timer (run + push mirrors) ──────────────────────
+    systemd.services.sync-agent-run = lib.mkIf (cfg.import.enable || cfg.pushMirrors.enable) {
+      description = "Sync Agent — Full cycle: import + push mirrors";
+      after = [ "network.target" ];
+      wantedBy = [ "multi-user.target" ];
+      serviceConfig = {
+        Type = "oneshot";
+        DynamicUser = true;
+        ExecStart = "${cfg.package}/bin/sync-agent -c ${effectiveConfig} run";
+        Restart = "on-failure";
+      } // lib.optionalAttrs (envFiles != []) {
+        EnvironmentFile = envFiles;
+      };
+    };
+
+    systemd.timers.sync-agent-run = lib.mkIf (cfg.import.enable || cfg.pushMirrors.enable) {
+      description = "Sync Agent — Periodic full sync timer";
+      wantedBy = [ "timers.target" ];
+      timerConfig = {
+        OnCalendar = "daily";
+        Persistent = true;
+      };
+    };
+
+    # ── Auto-create webhook server (persistent) ───────────────────
     systemd.services.sync-agent-webhook = lib.mkIf cfg.autoCreate.enable {
       description = "Sync Agent — Auto-create webhook server";
-      after = [ "network.target" "forgejo.service" ];
+      after = [ "network.target" ];
       wantedBy = [ "multi-user.target" ];
       serviceConfig = {
         DynamicUser = true;
-        ExecStart = "${cfg.package}/bin/sync-agent -c /etc/sync-agent/config.yaml webhook --port ${toString cfg.autoCreate.port}";
+        ExecStart = "${cfg.package}/bin/sync-agent -c ${effectiveConfig} webhook --port ${toString cfg.autoCreate.port}";
         Restart = "always";
         RestartSec = "5";
+      } // lib.optionalAttrs (envFiles != []) {
+        EnvironmentFile = envFiles;
       };
     };
   };

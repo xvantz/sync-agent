@@ -32,13 +32,9 @@ class ForgejoClient:
         max_attempts: int = 3,
     ):
         self.base_url = base_url.rstrip("/")
-        if token:
-            token_header = f"token {token}"
-        else:
-            token_header = None
         self._client = AsyncRetryClient(
             base_url=self.base_url,
-            token=token_header,
+            token=token,
             max_attempts=max_attempts,
         )
 
