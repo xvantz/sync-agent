@@ -119,28 +119,20 @@ in
     # at runtime via systemd EnvironmentFile pointing to sops secrets.
     environment.etc."sync-agent/config.yaml".text =
       let
-        platforms_github = lib.optionalString cfg.platforms.github.enable ''
-            github:
-              token: "${"$"}{GITHUB_TOKEN}"
-        '';
-        platforms_codeberg = lib.optionalString cfg.platforms.codeberg.enable ''
-            codeberg:
-              token: "${"$"}{CODEBERG_TOKEN}"
-        '';
-        platforms_gitlab = lib.optionalString cfg.platforms.gitlab.enable ''
-            gitlab:
-              token: "${"$"}{GITLAB_TOKEN}"
-        '';
+        dollar = "$";
+        platformLine = name: enabled:
+          lib.optionalString enabled
+            "    ${name}:\n      token: \"${dollar}{${lib.toUpper name}_TOKEN}\"\n";
       in
       ''
         forgejo:
           url: "${cfg.forgejo.url}"
-          token: "${"$"}{FORGEJO_TOKEN}"
+          token: "${dollar}{FORGEJO_TOKEN}"
 
         platforms:
-        ${platforms_github}
-        ${platforms_codeberg}
-        ${platforms_gitlab}
+        ${platformLine "github" cfg.platforms.github.enable}
+        ${platformLine "codeberg" cfg.platforms.codeberg.enable}
+        ${platformLine "gitlab" cfg.platforms.gitlab.enable}
 
         import:
           enabled: ${lib.boolToString cfg.import.enable}
