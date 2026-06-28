@@ -115,10 +115,26 @@ class Pusher:
                     continue
 
                 try:
-                    self._forgejo.add_push_mirror(
+                    mirror = self._forgejo.add_push_mirror(
                         fj_repo.owner, fj_repo.name, remote_url
                     )
                     logger.info("  ✓ Push mirror added to %s", target)
+
+                    # Force immediate sync so existing code is pushed
+                    mirror_name = mirror.get("remote_name", "")
+                    if mirror_name:
+                        try:
+                            self._forgejo.sync_push_mirror(
+                                fj_repo.owner, fj_repo.name, mirror_name
+                            )
+                            logger.info(
+                                "  ✓ Forced initial sync for %s", target
+                            )
+                        except Exception as sync_err:
+                            logger.warning(
+                                "  ⚠ Initial sync trigger failed: %s",
+                                sync_err,
+                            )
                     count += 1
                 except Exception as e:
                     logger.error(

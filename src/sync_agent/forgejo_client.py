@@ -124,6 +124,14 @@ class ForgejoClient:
             f"/api/v1/repos/{owner}/{repo}/push_mirrors", json=payload
         )
 
+    def sync_push_mirror(
+        self, owner: str, repo: str, mirror_name: str
+    ) -> None:
+        """Trigger an immediate sync of a push mirror."""
+        self._client.post(
+            f"/api/v1/repos/{owner}/{repo}/push_mirrors/{mirror_name}/sync"
+        )
+
     def remove_push_mirror(
         self, owner: str, repo: str, mirror_name: str
     ) -> None:
