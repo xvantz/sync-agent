@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 
 from sync_agent.forgejo_client import ForgejoClient, ForgejoRepo
 from sync_agent.platforms.base import PlatformProvider, PlatformRepo
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -76,13 +79,20 @@ class Reconciler:
             mirrors = self._forgejo.list_push_mirrors(
                 fj_repo.owner, fj_repo.name
             )
-        except Exception:
-            # If we can't list (e.g. no permissions), skip
+        except Exception as e:
+            logger.debug("Can't list mirrors for %s: %s", fj_repo.full_name, e)
             return
 
         has_target = any(
             target_platform in m.get("remote_address", "")
             for m in mirrors
+        )
+        logger.debug(
+            "Push mirrors for %s: %d mirrors, has %s: %s",
+            fj_repo.full_name,
+            len(mirrors),
+            target_platform,
+            has_target,
         )
         if not has_target:
             # Find existing entry or create new one
