@@ -21,6 +21,7 @@ class TestImporter:
 
         gh_provider = Mock()
         gh_provider.name = "github"
+        gh_provider._client = object()
 
         platforms = {"github": gh_provider}
         importer = Importer(forgejo, platforms)
@@ -50,12 +51,14 @@ class TestImporter:
             mirror=True,
             private=True,
             description="A test repo",
+            auth_token=None,
         )
 
     def test_dry_run_does_not_import(self) -> None:
         forgejo = Mock(spec=ForgejoClient)
         gh_provider = Mock()
         gh_provider.name = "github"
+        gh_provider._client = object()
 
         importer = Importer(forgejo, {"github": gh_provider})
 
@@ -118,6 +121,7 @@ class TestImporter:
 
         gh_provider = Mock()
         gh_provider.name = "github"
+        gh_provider._client = object()
 
         importer = Importer(forgejo, {"github": gh_provider})
 

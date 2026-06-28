@@ -150,6 +150,7 @@ class AsyncRetryClient:
             headers=headers,
             timeout=httpx.Timeout(30.0, connect=10.0),
         )
+        self._token = token
         self._max_attempts = max_attempts
         self._base_delay = base_delay
         self._max_delay = max_delay

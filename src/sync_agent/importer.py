@@ -61,12 +61,17 @@ class Importer:
                 continue
 
             try:
+                # Для приватных реп передаём токен платформы для авторизации
+                client = getattr(provider, '_client', None)
+                platform_token = client._token if hasattr(client, '_token') else None
+
                 result = self._forgejo.migrate_repo(
                     clone_addr=clone_url,
                     repo_name=cloud_repo.name,
                     mirror=True,
                     private=cloud_repo.private,
                     description=cloud_repo.description,
+                    auth_token=platform_token,
                 )
                 logger.info(
                     "  → Imported %s as %s (id=%d)",

@@ -1,0 +1,3 @@
+sync-agent = {
+  url = "github:xvantz/sync-agent";
+};
