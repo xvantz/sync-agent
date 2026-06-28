@@ -16,6 +16,7 @@ class TestPusher:
 
         gh_provider = Mock()
         gh_provider.name = "github"
+        gh_provider._client = object()  # no token -> falls back to SSH
 
         pusher = Pusher(forgejo, {"github": gh_provider})
 
@@ -45,7 +46,9 @@ class TestPusher:
 
     def test_dry_run_does_not_add(self) -> None:
         forgejo = Mock(spec=ForgejoClient)
-        pusher = Pusher(forgejo, {"github": Mock()})
+        gh_provider = Mock()
+        gh_provider._client = object()
+        pusher = Pusher(forgejo, {"github": gh_provider})
 
         diff = DiffResult(
             missing_push_mirrors=[
@@ -67,38 +70,69 @@ class TestPusher:
         assert count == 1
         forgejo.add_push_mirror.assert_not_called()
 
-    def test_empty_diff_does_nothing(self) -> None:
+    def test_no_missing_mirrors(self) -> None:
         forgejo = Mock(spec=ForgejoClient)
         pusher = Pusher(forgejo, {})
-        count = pusher.run(DiffResult())
+        diff = DiffResult()
+        count = pusher.run(diff)
         assert count == 0
         forgejo.add_push_mirror.assert_not_called()
 
-    def test_multiple_targets(self) -> None:
+    def test_unknown_target_skipped(self) -> None:
         forgejo = Mock(spec=ForgejoClient)
-        forgejo.add_push_mirror.return_value = {}
+        pusher = Pusher(forgejo, {})
+        diff = DiffResult(
+            missing_push_mirrors=[
+                (
+                    ForgejoRepo(
+                        id=1, name="r", full_name="x/r",
+                        owner="x",
+                        clone_url="http://localhost:2000/x/r.git",
+                        mirror=False, empty=False,
+                        private=True, description="",
+                    ),
+                    ["unknown-platform"],
+                ),
+            ],
+        )
+        count = pusher.run(diff)
+        assert count == 0
 
-        gh = Mock(); gh.name = "github"
-        cb = Mock(); cb.name = "codeberg"
+    def test_error_logged_continues(self) -> None:
+        forgejo = Mock(spec=ForgejoClient)
+        forgejo.add_push_mirror.side_effect = Exception("API error")
 
-        pusher = Pusher(forgejo, {"github": gh, "codeberg": cb})
+        gh_provider = Mock()
+        gh_provider.name = "github"
+        gh_provider._client = object()
+
+        pusher = Pusher(forgejo, {"github": gh_provider})
 
         diff = DiffResult(
             missing_push_mirrors=[
                 (
                     ForgejoRepo(
-                        id=1, name="repo", full_name="x/repo",
+                        id=1, name="a", full_name="x/a",
                         owner="x",
-                        clone_url="http://localhost:2000/x/repo.git",
+                        clone_url="http://localhost:2000/x/a.git",
                         mirror=False, empty=False,
                         private=True, description="",
                     ),
-                    ["github", "codeberg"],
+                    ["github"],
+                ),
+                (
+                    ForgejoRepo(
+                        id=2, name="b", full_name="x/b",
+                        owner="x",
+                        clone_url="http://localhost:2000/x/b.git",
+                        mirror=False, empty=False,
+                        private=True, description="",
+                    ),
+                    ["github"],
                 ),
             ],
         )
 
         count = pusher.run(diff)
-
-        assert count == 2
+        assert count == 0
         assert forgejo.add_push_mirror.call_count == 2
