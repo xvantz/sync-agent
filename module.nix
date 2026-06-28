@@ -19,7 +19,7 @@ in
       default = null;
       description = ''
         Path to sync-agent config.yaml. When set, overrides all individual options below.
-        The config file supports ${ENV_VAR} substitution from environment files.
+        The config file supports ${"$"}{ENV_VAR} substitution from environment files.
       '';
     };
 
