@@ -145,7 +145,10 @@ class TestForgejoClient:
 
         client._client.post.assert_called_once_with(
             "/api/v1/repos/xvantz/hashgrid/push_mirrors",
-            json={"remote_address": "git@github.com:xvantz/hashgrid.git"},
+            json={
+                "remote_address": "git@github.com:xvantz/hashgrid.git",
+                "interval": "8h0m0s",
+            },
         )
         assert result["remote_name"] == "github"
 

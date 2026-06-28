@@ -31,11 +31,7 @@ class Pusher:
         return client._token if hasattr(client, "_token") else None
 
     def _build_push_url(self, target: str, owner: str, repo: str) -> str:
-        """Build HTTPS push URL with token for authentication."""
-        token = self._get_platform_token(target)
-        if token:
-            return f"https://{token}@github.com/{owner}/{repo}.git"
-        # Fallback to SSH if no token available
+        """Build SSH push URL (HTTPS with token not supported by Forgejo security check)."""
         return f"git@{target}.com:{owner}/{repo}.git"
 
     def run(
