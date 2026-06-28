@@ -53,9 +53,13 @@ class Reconciler:
                 if cloud_repo.name not in forgejo_by_name:
                     result.missing_in_forgejo.append((platform_name, cloud_repo))
                 else:
-                    # Check push mirrors
                     fj_repo = forgejo_by_name[cloud_repo.name]
                     self._check_push_mirrors(fj_repo, platform_name, result)
+
+        # 3. Also check push mirrors for Forgejo-only repos (not in cloud)
+        for fj_repo in forgejo_repos:
+            for platform_name in self._platforms:
+                self._check_push_mirrors(fj_repo, platform_name, result)
 
         return result
 
