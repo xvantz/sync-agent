@@ -217,5 +217,5 @@ in
         EnvironmentFile = envFiles;
       };
     };
-  };
+  });
 }
