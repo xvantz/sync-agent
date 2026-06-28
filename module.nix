@@ -100,7 +100,21 @@ in
     };
   };
 
-  config = lib.mkIf cfg.enable {
+  config = lib.mkIf cfg.enable (let
+    # Collect environment files from tokenFile options
+    envFiles = lib.filter (x: x != null) [
+      cfg.forgejo.tokenFile
+      (if cfg.platforms.github.enable then cfg.platforms.github.tokenFile else null)
+      (if cfg.platforms.codeberg.enable then cfg.platforms.codeberg.tokenFile else null)
+      (if cfg.platforms.gitlab.enable then cfg.platforms.gitlab.tokenFile else null)
+    ];
+
+    # Use manual configFile if set, otherwise use generated one
+    effectiveConfig =
+      if cfg.configFile != null
+      then cfg.configFile
+      else "/etc/sync-agent/config.yaml";
+  in {
     # Generate config.yaml with env var placeholders — tokens are injected
     # at runtime via systemd EnvironmentFile pointing to sops secrets.
     environment.etc."sync-agent/config.yaml".text =
@@ -140,20 +154,6 @@ in
           enabled: ${lib.boolToString cfg.autoCreate.enable}
           port: ${toString cfg.autoCreate.port}
       '';
-
-    # Collect environment files from tokenFile options
-    envFiles = lib.filter (x: x != null) [
-      cfg.forgejo.tokenFile
-      (if cfg.platforms.github.enable then cfg.platforms.github.tokenFile else null)
-      (if cfg.platforms.codeberg.enable then cfg.platforms.codeberg.tokenFile else null)
-      (if cfg.platforms.gitlab.enable then cfg.platforms.gitlab.tokenFile else null)
-    ];
-
-    # Use manual configFile if set, otherwise use generated one
-    effectiveConfig =
-      if cfg.configFile != null
-      then cfg.configFile
-      else "/etc/sync-agent/config.yaml";
 
     # ── Import timer (oneshot) ─────────────────────────────────────
     systemd.services.sync-agent-import = lib.mkIf cfg.import.enable {
