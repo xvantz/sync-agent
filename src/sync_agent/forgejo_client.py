@@ -112,9 +112,14 @@ class ForgejoClient:
     def add_push_mirror(
         self, owner: str, repo: str, remote_address: str,
         interval: str = "8h0m0s",
+        sync_on_commit: bool = True,
     ) -> dict:
         """Add a push mirror to a repository."""
-        payload = {"remote_address": remote_address, "interval": interval}
+        payload = {
+            "remote_address": remote_address,
+            "interval": interval,
+            "sync_on_commit": sync_on_commit,
+        }
         return self._client.post(
             f"/api/v1/repos/{owner}/{repo}/push_mirrors", json=payload
         )

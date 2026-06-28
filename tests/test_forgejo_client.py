@@ -148,6 +148,7 @@ class TestForgejoClient:
             json={
                 "remote_address": "git@github.com:xvantz/hashgrid.git",
                 "interval": "8h0m0s",
+                "sync_on_commit": True,
             },
         )
         assert result["remote_name"] == "github"
