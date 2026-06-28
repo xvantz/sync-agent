@@ -34,6 +34,35 @@ class Pusher:
         """Build SSH push URL (HTTPS with token not supported by Forgejo security check)."""
         return f"git@{target}.com:{owner}/{repo}.git"
 
+    def _ensure_repo_exists(
+        self,
+        provider: PlatformProvider,
+        name: str,
+        owner: str,
+        *,
+        private: bool = True,
+        description: str = "",
+    ) -> bool:
+        """Create repo on target platform if it doesn't exist yet.
+
+        Returns True if repo was created, False if it already existed.
+        """
+        try:
+            exists = provider.repo_exists(name, owner=owner)
+        except Exception:
+            exists = False
+
+        if exists:
+            return False
+
+        logger.info("    Repo '%s/%s' missing on %s, creating...", owner, name, provider.name)
+        try:
+            provider.create_repo(name, private=private, description=description)
+            return True
+        except Exception as e:
+            logger.error("    Could not create repo on %s: %s", provider.name, e)
+            return False
+
     def run(
         self,
         diff: DiffResult,
@@ -41,6 +70,9 @@ class Pusher:
         dry_run: bool = False,
     ) -> int:
         """Set up Push Mirrors for repos that are missing them.
+
+        Creates repos on target platforms first if they don't exist,
+        then adds push mirrors.
 
         Args:
             diff: The diff result (uses missing_push_mirrors list).
@@ -57,15 +89,25 @@ class Pusher:
                     logger.warning("No provider for target '%s'", target)
                     continue
 
-                remote_url = self._build_push_url(
-                    target, fj_repo.owner, fj_repo.name
-                )
-
                 logger.info(
-                    "%s Add push mirror %s -> %s",
+                    "%s Process push mirror %s -> %s",
                     "[DRY-RUN]" if dry_run else "",
                     fj_repo.full_name,
                     target,
+                )
+
+                if not dry_run:
+                    # Create repo on target platform if missing
+                    self._ensure_repo_exists(
+                        provider,
+                        fj_repo.name,
+                        fj_repo.owner,
+                        private=fj_repo.private,
+                        description=fj_repo.description,
+                    )
+
+                remote_url = self._build_push_url(
+                    target, fj_repo.owner, fj_repo.name
                 )
 
                 if dry_run:
