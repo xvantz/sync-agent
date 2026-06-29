@@ -43,9 +43,10 @@ class Pusher:
         private: bool = True,
         description: str = "",
     ) -> bool:
-        """Create repo on target platform if it doesn't exist yet.
+        """Ensure the repo exists on the target platform.
 
-        Returns True if repo was created, False if it already existed.
+        Returns True if the repo is ready (already exists or was just created).
+        Returns False if creation was attempted but failed.
         """
         try:
             exists = provider.repo_exists(name, owner=owner)
@@ -53,15 +54,16 @@ class Pusher:
             exists = False
 
         if exists:
-            return False
+            logger.debug("  Repo '%s/%s' already exists on %s", owner, name, provider.name)
+            return True  # Already exists → proceed
 
         logger.info("    Repo '%s/%s' missing on %s, creating...", owner, name, provider.name)
         try:
             provider.create_repo(name, private=private, description=description)
-            return True
+            return True  # Created successfully → proceed
         except Exception as e:
             logger.error("    Could not create repo on %s: %s", provider.name, e)
-            return False
+            return False  # Failed → skip push mirror
 
     def run(
         self,
@@ -98,13 +100,18 @@ class Pusher:
 
                 if not dry_run:
                     # Create repo on target platform if missing
-                    self._ensure_repo_exists(
+                    if not self._ensure_repo_exists(
                         provider,
                         fj_repo.name,
                         fj_repo.owner,
                         private=fj_repo.private,
                         description=fj_repo.description,
-                    )
+                    ):
+                        logger.warning(
+                            "  ✗ Skipping push mirror for %s — cannot create repo '%s/%s' on %s",
+                            fj_repo.full_name, fj_repo.owner, fj_repo.name, target,
+                        )
+                        continue
 
                 remote_url = self._build_push_url(
                     target, fj_repo.owner, fj_repo.name
@@ -113,6 +120,30 @@ class Pusher:
                 if dry_run:
                     count += 1
                     continue
+
+                # Remove existing broken mirrors to this target before adding new one
+                try:
+                    existing = self._forgejo.list_push_mirrors(
+                        fj_repo.owner, fj_repo.name
+                    )
+                    for m in existing:
+                        if target in m.get("remote_address", ""):
+                            err = m.get("last_error", "")
+                            if err and "Repository not found" in err:
+                                logger.info(
+                                    "  Removing broken push mirror for %s",
+                                    target,
+                                )
+                                self._forgejo.remove_push_mirror(
+                                    fj_repo.owner,
+                                    fj_repo.name,
+                                    m["remote_name"],
+                                )
+                except Exception as list_err:
+                    logger.debug(
+                        "  Could not list/clean existing mirrors: %s",
+                        list_err,
+                    )
 
                 try:
                     mirror = self._forgejo.add_push_mirror(

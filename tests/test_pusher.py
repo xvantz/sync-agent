@@ -13,10 +13,12 @@ class TestPusher:
     def test_adds_missing_push_mirrors(self) -> None:
         forgejo = Mock(spec=ForgejoClient)
         forgejo.add_push_mirror.return_value = {"remote_name": "github"}
+        forgejo.list_push_mirrors.return_value = []
 
         gh_provider = Mock()
         gh_provider.name = "github"
         gh_provider._client = object()  # no token -> falls back to SSH
+        gh_provider.repo_exists.return_value = True  # repo exists on GitHub
 
         pusher = Pusher(forgejo, {"github": gh_provider})
 
@@ -98,13 +100,16 @@ class TestPusher:
         count = pusher.run(diff)
         assert count == 0
 
-    def test_error_logged_continues(self) -> None:
+    def test_repo_creation_failure_skips_mirror(self) -> None:
+        """When repo doesn't exist on target and can't be created, skip push mirror."""
         forgejo = Mock(spec=ForgejoClient)
-        forgejo.add_push_mirror.side_effect = Exception("API error")
+        forgejo.list_push_mirrors.return_value = []
 
         gh_provider = Mock()
         gh_provider.name = "github"
         gh_provider._client = object()
+        gh_provider.repo_exists.return_value = False   # repo missing
+        gh_provider.create_repo.side_effect = Exception("no permission")  # can't create
 
         pusher = Pusher(forgejo, {"github": gh_provider})
 
@@ -120,19 +125,10 @@ class TestPusher:
                     ),
                     ["github"],
                 ),
-                (
-                    ForgejoRepo(
-                        id=2, name="b", full_name="x/b",
-                        owner="x",
-                        clone_url="http://localhost:2000/x/b.git",
-                        mirror=False, empty=False,
-                        private=True, description="",
-                    ),
-                    ["github"],
-                ),
             ],
         )
 
         count = pusher.run(diff)
         assert count == 0
-        assert forgejo.add_push_mirror.call_count == 2
+        forgejo.add_push_mirror.assert_not_called()
+        gh_provider.create_repo.assert_called_once()

@@ -83,10 +83,20 @@ class Reconciler:
             logger.debug("Can't list mirrors for %s: %s", fj_repo.full_name, e)
             return
 
-        has_target = any(
-            target_platform in m.get("remote_address", "")
-            for m in mirrors
-        )
+        has_target = False
+        for m in mirrors:
+            if target_platform in m.get("remote_address", ""):
+                has_target = True
+                # Check if the mirror has a non-transient error
+                last_error = m.get("last_error", "")
+                if last_error and "Repository not found" in last_error:
+                    logger.info(
+                        "Push mirror for %s to %s has broken target repo, will re-create",
+                        fj_repo.full_name, target_platform,
+                    )
+                    has_target = False
+                break
+
         logger.debug(
             "Push mirrors for %s: %d mirrors, has %s: %s",
             fj_repo.full_name,
