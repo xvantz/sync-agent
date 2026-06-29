@@ -212,19 +212,26 @@ in
       } // lib.optionalAttrs (envFiles != []) {
         EnvironmentFile = envFiles;
       };
-      # Register system webhook on first start
+      # Register system webhook on first start only
       postStart = ''
+        FLAG="/var/lib/sync-agent/.webhook-registered"
+        if [ -f "$FLAG" ]; then
+          exit 0
+        fi
         WEBHOOK_URL="http://127.0.0.1:9123"
-        # Check if webhook already registered
+        # Check if webhook already exists
         EXISTING=$(${pkgs.curl}/bin/curl -sf \
           -H "Authorization: token ''${FORGEJO_TOKEN}" \
           "http://localhost:2000/api/v1/admin/hooks" \
           | ${pkgs.python3}/bin/python3 -c "
 import sys, json
-hooks = json.load(sys.stdin)
-for h in hooks:
-    if h.get('url') == '$WEBHOOK_URL':
-        print('exists')
+try:
+    hooks = json.load(sys.stdin)
+    for h in hooks:
+        if isinstance(h, dict) and h.get('url', '') == '$WEBHOOK_URL':
+            print('exists')
+except Exception:
+    pass
 " 2>/dev/null || true)
         if [ "$EXISTING" != "exists" ] && [ -n "$FORGEJO_TOKEN" ]; then
           ${pkgs.curl}/bin/curl -sf -X POST \
@@ -232,7 +239,8 @@ for h in hooks:
             -H "Content-Type: application/json" \
             -d '{"type":"forgejo","config":{"url":"http://127.0.0.1:9123","content_type":"json"},"events":["repository"],"active":true}' \
             "http://localhost:2000/api/v1/admin/hooks" \
-            && echo "✓ System webhook registered" || true
+            && echo "✓ System webhook registered" \
+            && mkdir -p /var/lib/sync-agent && touch "$FLAG" || true
         fi
       '';
     };
