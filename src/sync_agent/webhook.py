@@ -24,8 +24,15 @@ class WebhookHandler(BaseHTTPRequestHandler):
     secret: str = ""
 
     def do_POST(self) -> None:  # noqa: N802
+        logger.debug("POST %s", self.path)
         content_length = int(self.headers.get("Content-Length", 0))
         body = self.rfile.read(content_length)
+
+        logger.debug(
+            "Webhook request: headers=%s, body=%s",
+            dict(self.headers),
+            body.decode() if body else "",
+        )
 
         # Verify signature if secret is set
         if self.secret:
@@ -44,6 +51,11 @@ class WebhookHandler(BaseHTTPRequestHandler):
             return
 
         event_type = self.headers.get("X-Forgejo-Event", "")
+        logger.info(
+            "Incoming webhook: event=%s, repo=%s",
+            event_type,
+            event.get("repository", {}).get("name", "?"),
+        )
 
         if event_type == "repository" and event.get("action") == "created":
             self._handle_repo_created(event)
