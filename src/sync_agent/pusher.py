@@ -65,20 +65,67 @@ class Pusher:
             logger.error("    Could not create repo on %s: %s", provider.name, e)
             return False  # Failed → skip push mirror
 
+    def sync_all_mirrors(
+        self,
+        *,
+        dry_run: bool = False,
+    ) -> int:
+        """Trigger an immediate sync on ALL existing push mirrors.
+
+        This ensures code is pushed now rather than waiting for the
+        periodic sync interval (default 8h).
+
+        Args:
+            dry_run: If True, only log what would be synced.
+
+        Returns:
+            Number of mirrors synced.
+        """
+        repos = self._forgejo.list_repos()
+        count = 0
+        for repo in repos:
+            try:
+                mirrors = self._forgejo.list_push_mirrors(
+                    repo.owner, repo.name
+                )
+            except Exception:
+                continue
+            for m in mirrors:
+                remote = m.get("remote_address", "?")
+                if dry_run:
+                    logger.info("  [DRY-RUN] Would sync %s → %s", repo.full_name, remote)
+                    count += 1
+                    continue
+                try:
+                    self._forgejo.sync_push_mirror(
+                        repo.owner, repo.name, m["remote_name"]
+                    )
+                    logger.info("  ✓ Synced %s → %s", repo.full_name, remote)
+                    count += 1
+                except Exception as e:
+                    logger.warning(
+                        "  ⚠ Sync trigger failed for %s: %s",
+                        repo.full_name, e,
+                    )
+        return count
+
     def run(
         self,
         diff: DiffResult,
         *,
         dry_run: bool = False,
+        sync_all: bool = False,
     ) -> int:
         """Set up Push Mirrors for repos that are missing them.
 
         Creates repos on target platforms first if they don't exist,
-        then adds push mirrors.
+        then adds push mirrors. After setting up new mirrors, triggers
+        an immediate sync on ALL existing mirrors.
 
         Args:
             diff: The diff result (uses missing_push_mirrors list).
             dry_run: If True, only log.
+            sync_all: If True (default), sync all mirrors after setup.
 
         Returns:
             Number of push mirrors set up.
@@ -173,5 +220,13 @@ class Pusher:
                         target,
                         e,
                     )
+
+        # After setting up/checking mirrors, sync ALL existing ones
+        # so code is pushed immediately instead of waiting for the periodic interval
+        if not dry_run and sync_all:
+            logger.info("Syncing all push mirrors...")
+            synced = self.sync_all_mirrors()
+            if synced:
+                logger.info("Triggered sync for %d push mirrors", synced)
 
         return count

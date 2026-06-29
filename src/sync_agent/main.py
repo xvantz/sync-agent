@@ -116,6 +116,11 @@ def run(ctx: click.Context, dry_run: bool) -> None:
             setup_count = pusher.run(diff, dry_run=dry_run)
             if not dry_run:
                 logger.info("Set up %d push mirrors", setup_count)
+                # Sync ALL existing mirrors so code is pushed immediately
+                logger.info("Triggering sync on all push mirrors...")
+                synced = pusher.sync_all_mirrors()
+                if synced:
+                    logger.info("Synced %d push mirrors", synced)
             else:
                 logger.info("Would set up %d push mirrors", setup_count)
         else:
