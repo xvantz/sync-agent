@@ -305,26 +305,42 @@ def serve(ctx: click.Context, port: int, host: str) -> None:
 
 
 @cli.command()
-@click.option("--url", default="http://127.0.0.1:9124/sync/push", help="Webhook target URL")
+@click.option("--url", default="http://127.0.0.1:9123", help="Webhook target URL")
+@click.option("--sync-all", is_flag=True, default=False, help="Register on ALL existing repos (not just new ones)")
 @click.pass_context
-def setup_webhook(ctx: click.Context, url: str) -> None:
-    """Register a Forgejo system webhook that triggers push mirror sync on every push."""
+def setup_webhook(ctx: click.Context, url: str, sync_all: bool) -> None:
+    """Register Forgejo webhooks that trigger auto-create + sync on push.
+
+    By default registers on new repos (via auto-create flow).
+    With --sync-all, registers on ALL existing repos too.
+    """
     cfg: Config = ctx.obj["cfg"]
     forgejo = ForgejoClient(cfg.forgejo_url, cfg.forgejo_token)
     try:
-        logger.info("Registering system webhook: %s", url)
-
-        # Check if already exists
-        existing = forgejo.list_system_webhooks()
-        for hook in existing:
-            if hook.get("url") == url:
-                logger.info("  Webhook already exists (id=%s)", hook["id"])
-                return
-
-        result = forgejo.create_system_webhook(
-            url=url, events=["push"],
-        )
-        logger.info("  ✓ System webhook registered (id=%s)", result.get("id"))
-        logger.info("  Now every push to any Forgejo repo will trigger push mirror sync!")
+        if sync_all:
+            repos = forgejo.list_repos()
+            logger.info("Registering webhook on %d existing repos...", len(repos))
+            count = 0
+            for repo in repos:
+                existing = forgejo.list_webhooks(repo.owner, repo.name)
+                already = any(h.get("url") == url for h in existing)
+                if already:
+                    logger.debug("  Already exists on %s", repo.full_name)
+                    continue
+                try:
+                    forgejo.create_webhook(
+                        repo.owner, repo.name, url,
+                        events=["repository", "push"],
+                    )
+                    logger.info("  ✓ Registered on %s", repo.full_name)
+                    count += 1
+                except Exception as e:
+                    logger.warning("  ✗ Failed on %s: %s", repo.full_name, e)
+            logger.info("Registered on %d repos", count)
+        else:
+            # Just register on the webhook server's own repo as bootstrap
+            # (new repos will get it via auto-create flow)
+            logger.info("Webhook server target: %s", url)
+            logger.info("Use --sync-all to register on all repos")
     finally:
         forgejo.close()
