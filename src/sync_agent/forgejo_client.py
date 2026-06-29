@@ -125,11 +125,17 @@ class ForgejoClient:
         )
 
     def sync_push_mirror(
-        self, owner: str, repo: str, mirror_name: str
+        self, owner: str, repo: str, mirror_name: str | None = None
     ) -> None:
-        """Trigger an immediate sync of a push mirror."""
+        """Trigger an immediate sync of all push mirrors for a repository.
+
+        Args:
+            owner: Repository owner.
+            repo: Repository name.
+            mirror_name: Ignored — Forgejo syncs all mirrors for the repo.
+        """
         self._client.post(
-            f"/api/v1/repos/{owner}/{repo}/push_mirrors/{mirror_name}/sync"
+            f"/api/v1/repos/{owner}/{repo}/push_mirrors-sync"
         )
 
     def remove_push_mirror(
