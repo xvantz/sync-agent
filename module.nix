@@ -227,7 +227,7 @@ import sys, json
 try:
     hooks = json.load(sys.stdin)
     for h in hooks:
-        if isinstance(h, dict) and 'http://127.0.0.1:9123' in h.get('url', ''):
+        if isinstance(h, dict) and 'http://127.0.0.1:9123' in str(h.get('url')):
             print('exists')
 except Exception:
     pass
