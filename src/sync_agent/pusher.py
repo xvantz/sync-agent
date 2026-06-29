@@ -72,6 +72,8 @@ class Pusher:
     ) -> int:
         """Trigger an immediate sync on ALL existing push mirrors.
 
+        Calls the sync endpoint ONCE per repo (it syncs all mirrors for that repo).
+
         This ensures code is pushed now rather than waiting for the
         periodic sync interval (default 8h).
 
@@ -79,7 +81,7 @@ class Pusher:
             dry_run: If True, only log what would be synced.
 
         Returns:
-            Number of mirrors synced.
+            Number of repos synced.
         """
         repos = self._forgejo.list_repos()
         count = 0
@@ -90,23 +92,25 @@ class Pusher:
                 )
             except Exception:
                 continue
-            for m in mirrors:
-                remote = m.get("remote_address", "?")
-                if dry_run:
-                    logger.info("  [DRY-RUN] Would sync %s → %s", repo.full_name, remote)
-                    count += 1
-                    continue
-                try:
-                    self._forgejo.sync_push_mirror(
-                        repo.owner, repo.name, m["remote_name"]
-                    )
-                    logger.info("  ✓ Synced %s → %s", repo.full_name, remote)
-                    count += 1
-                except Exception as e:
-                    logger.warning(
-                        "  ⚠ Sync trigger failed for %s: %s",
-                        repo.full_name, e,
-                    )
+            if not mirrors:
+                continue
+            # Sync once per repo — one call syncs ALL mirrors for it
+            remote = mirrors[0].get("remote_address", "?")
+            if dry_run:
+                logger.info("  [DRY-RUN] Would sync %s → %s", repo.full_name, remote)
+                count += 1
+                continue
+            try:
+                self._forgejo.sync_push_mirror(
+                    repo.owner, repo.name, mirrors[0].get("remote_name")
+                )
+                logger.info("  ✓ Synced %s", repo.full_name)
+                count += 1
+            except Exception as e:
+                logger.warning(
+                    "  ⚠ Sync trigger failed for %s: %s",
+                    repo.full_name, e,
+                )
         return count
 
     def run(
