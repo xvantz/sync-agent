@@ -111,6 +111,7 @@ def run(ctx: click.Context, dry_run: bool) -> None:
             logger.info("All repos already in Forgejo")
 
         # 3. Set up push mirrors
+        pusher: Pusher | None = None
         if cfg.push_mirrors_enabled and diff.missing_push_mirrors:
             logger.info(
                 "Repos missing push mirrors: %d",
@@ -120,15 +121,18 @@ def run(ctx: click.Context, dry_run: bool) -> None:
             setup_count = pusher.run(diff, dry_run=dry_run)
             if not dry_run:
                 logger.info("Set up %d push mirrors", setup_count)
-                # Sync ALL existing mirrors so code is pushed immediately
-                logger.info("Triggering sync on all push mirrors...")
-                synced = pusher.sync_all_mirrors()
-                if synced:
-                    logger.info("Synced %d push mirrors", synced)
             else:
                 logger.info("Would set up %d push mirrors", setup_count)
         else:
             logger.info("All push mirrors are in place")
+
+        # Sync ALL existing push mirrors so code is pushed immediately
+        if cfg.push_mirrors_enabled and not dry_run:
+            logger.info("Triggering sync on all push mirrors...")
+            pusher = pusher or Pusher(forgejo, platforms)
+            synced = pusher.sync_all_mirrors()
+            if synced:
+                logger.info("Synced %d push mirrors", synced)
 
     finally:
         forgejo.close()
