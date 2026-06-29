@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import sys
+from pathlib import Path
 
 import click
 
@@ -56,12 +57,30 @@ def _init_platforms(
 
 
 @click.group()
-@click.option("--config", "-c", default="config.yaml", help="Config file path")
+@click.option("--config", "-c", default=None, help="Config file path")
 @click.option("--verbose", "-v", is_flag=True, help="Verbose output")
 @click.pass_context
-def cli(ctx: click.Context, config: str, verbose: bool) -> None:
+def cli(ctx: click.Context, config: str | None, verbose: bool) -> None:
     """Sync Agent — synchronise repositories across Git platforms."""
     _setup_logging(verbose)
+    if config is None:
+        # Auto-detect: /etc/sync-agent/config.yaml → ./config.yaml
+        etc_cfg = Path("/etc/sync-agent/config.yaml")
+        local_cfg = Path("config.yaml")
+        if etc_cfg.exists():
+            config = str(etc_cfg)
+        elif local_cfg.exists():
+            config = str(local_cfg)
+        else:
+            click.echo(
+                "ERROR: Config file not found.\n"
+                "Checked:\n"
+                f"  {etc_cfg}\n"
+                f"  {local_cfg}\n"
+                "Create one or use: sync-agent -c <path>",
+                err=True,
+            )
+            ctx.exit(1)
     try:
         cfg = Config.from_file(config)
     except (FileNotFoundError, ValueError) as e:
