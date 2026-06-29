@@ -151,7 +151,6 @@ in
     systemd.services.sync-agent-import = lib.mkIf cfg.import.enable {
       description = "Sync Agent — Import repos from cloud platforms";
       after = [ "network.target" ];
-      wantedBy = [ "multi-user.target" ];
       serviceConfig = {
         Type = "oneshot";
         DynamicUser = true;
@@ -167,6 +166,7 @@ in
       wantedBy = [ "timers.target" ];
       timerConfig = {
         OnCalendar = cfg.import.schedule;
+        OnBootSec = "3min";
         Persistent = true;
       };
     };
@@ -175,7 +175,6 @@ in
     systemd.services.sync-agent-run = lib.mkIf (cfg.import.enable || cfg.pushMirrors.enable) {
       description = "Sync Agent — Full cycle: import + push mirrors";
       after = [ "network.target" ];
-      wantedBy = [ "multi-user.target" ];
       serviceConfig = {
         Type = "oneshot";
         DynamicUser = true;
@@ -191,6 +190,7 @@ in
       wantedBy = [ "timers.target" ];
       timerConfig = {
         OnCalendar = "daily";
+        OnBootSec = "5min";
         Persistent = true;
       };
     };
