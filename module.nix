@@ -212,7 +212,7 @@ in
       } // lib.optionalAttrs (envFiles != []) {
         EnvironmentFile = envFiles;
       };
-      # Register system webhook on first start only
+      # Register user webhook on first start only (system webhooks blocked by Forgejo ALLOWED_HOST_LIST)
       postStart = ''
         FLAG="/var/lib/sync-agent/.webhook-registered"
         if [ -f "$FLAG" ]; then
@@ -221,7 +221,7 @@ in
         # Check if webhook already exists
         EXISTING=$(${pkgs.curl}/bin/curl -sf \
           -H "Authorization: token ''${FORGEJO_TOKEN}" \
-          "http://localhost:2000/api/v1/admin/hooks" \
+          "http://localhost:2000/api/v1/user/hooks" \
           | ${pkgs.python3}/bin/python3 -c "
 import sys, json
 try:
@@ -237,8 +237,8 @@ except Exception:
             -H "Authorization: token ''${FORGEJO_TOKEN}" \
             -H "Content-Type: application/json" \
             -d '{"type":"forgejo","config":{"url":"http://127.0.0.1:9123","content_type":"json"},"events":["repository"],"active":true}' \
-            "http://localhost:2000/api/v1/admin/hooks" \
-            && echo "✓ System webhook registered" \
+            "http://localhost:2000/api/v1/user/hooks" \
+            && echo "✓ User webhook registered" \
             && mkdir -p /var/lib/sync-agent && touch "$FLAG" || true
         fi
       '';
