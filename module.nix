@@ -218,7 +218,6 @@ in
         if [ -f "$FLAG" ]; then
           exit 0
         fi
-        WEBHOOK_URL="http://127.0.0.1:9123"
         # Check if webhook already exists
         EXISTING=$(${pkgs.curl}/bin/curl -sf \
           -H "Authorization: token ''${FORGEJO_TOKEN}" \
@@ -228,7 +227,7 @@ import sys, json
 try:
     hooks = json.load(sys.stdin)
     for h in hooks:
-        if isinstance(h, dict) and h.get('url', '') == '$WEBHOOK_URL':
+        if isinstance(h, dict) and 'http://127.0.0.1:9123' in h.get('url', ''):
             print('exists')
 except Exception:
     pass
