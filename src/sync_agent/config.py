@@ -83,6 +83,52 @@ class Config:
                 return default
         return val
 
+    # ── token resolution ────────────────────────────────────────────
+
+    @staticmethod
+    def _read_token_file(path: str, env_key: str | None = None) -> str | None:
+        """Read a token from a KEY=VALUE env file.
+
+        If env_key is provided (e.g. "GITHUB_TOKEN"), looks for that key.
+        Otherwise returns the first non-empty, non-comment line after stripping 'KEY='.
+        """
+        try:
+            text = Path(path).read_text().strip()
+        except Exception:
+            return None
+        if not text:
+            return None
+        for line in text.splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if env_key and line.startswith(f"{env_key}="):
+                return line[len(env_key) + 1:]
+            if not env_key and "=" in line:
+                return line.split("=", 1)[1]
+        return text
+
+    def _resolve_token(self, *keys: str, env_key: str | None = None) -> str | None:
+        """Resolve a token from a config dict.
+
+        Checks in order:
+          1. {keys}.token_file → read file
+          2. {keys}.token       → use raw value
+        """
+        cfg = self._nested(*keys, default={})
+        if isinstance(cfg, str):
+            return cfg
+        if not isinstance(cfg, dict):
+            return None
+        # Try token_file first
+        file_path = cfg.get("token_file")
+        if file_path:
+            val = self._read_token_file(str(file_path), env_key=env_key)
+            if val:
+                return val
+        # Fall back to inline token
+        return cfg.get("token")
+
     # ── forgejo ──────────────────────────────────────────────────────
 
     @property
@@ -91,12 +137,12 @@ class Config:
 
     @property
     def forgejo_token(self) -> str | None:
-        return self._nested("forgejo", "token")
+        return self._resolve_token("forgejo", env_key="FORGEJO_TOKEN")
 
     # ── platforms ────────────────────────────────────────────────────
 
     def platform_token(self, name: str) -> str | None:
-        return self._nested("platforms", name, "token")
+        return self._resolve_token("platforms", name, env_key=f"{name.upper()}_TOKEN")
 
     @property
     def enabled_platforms(self) -> list[str]:

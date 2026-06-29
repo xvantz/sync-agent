@@ -120,19 +120,26 @@ in
     environment.etc."sync-agent/config.yaml".text =
       let
         dollar = "$";
-        platformLine = name: enabled:
-          lib.optionalString enabled
-            "    ${name}:\n      token: \"${dollar}{${lib.toUpper name}_TOKEN}\"\n";
+        platformLine = name: enabled: tokenPath:
+          if enabled && tokenPath != null then
+            "    ${name}:\n      token_file: \"${toString tokenPath}\"\n"
+          else if enabled then
+            "    ${name}:\n      token: \"\${${lib.toUpper name}_TOKEN}\"\n"
+          else "";
+        ghToken = if cfg.platforms.github.enable then cfg.platforms.github.tokenFile else null;
+        cbToken = if cfg.platforms.codeberg.enable then cfg.platforms.codeberg.tokenFile else null;
+        glToken = if cfg.platforms.gitlab.enable then cfg.platforms.gitlab.tokenFile else null;
+        fjToken = if cfg.forgejo.tokenFile != null then cfg.forgejo.tokenFile else null;
       in
       ''
         forgejo:
           url: "${cfg.forgejo.url}"
-          token: "${dollar}{FORGEJO_TOKEN}"
+          ${if fjToken != null then "token_file: \"${toString fjToken}\"" else "token: \"${dollar}{FORGEJO_TOKEN}\""}
 
         platforms:
-        ${platformLine "github" cfg.platforms.github.enable}
-        ${platformLine "codeberg" cfg.platforms.codeberg.enable}
-        ${platformLine "gitlab" cfg.platforms.gitlab.enable}
+        ${platformLine "github" cfg.platforms.github.enable ghToken}
+        ${platformLine "codeberg" cfg.platforms.codeberg.enable cbToken}
+        ${platformLine "gitlab" cfg.platforms.gitlab.enable glToken}
 
         import:
           enabled: ${lib.boolToString cfg.import.enable}
