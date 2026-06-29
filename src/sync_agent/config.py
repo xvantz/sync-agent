@@ -51,12 +51,24 @@ class Config:
         if not path.exists():
             raise FileNotFoundError(f"Config file not found: {path}")
         raw = yaml.safe_load(path.read_text())
-        resolved = _walk(raw)
+        try:
+            resolved = _walk(raw)
+        except ValueError as e:
+            raise ValueError(
+                f"Config error in {path}: {e}\n"
+                f"Hint: source the env file first or set the missing variable"
+            ) from e
         return cls(resolved)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "Config":
-        resolved = _walk(data)
+        try:
+            resolved = _walk(data)
+        except ValueError as e:
+            raise ValueError(
+                f"Config error: {e}\n"
+                f"Hint: source the env file first or set the missing variable"
+            ) from e
         return cls(resolved)
 
     # ── helpers ──────────────────────────────────────────────────────

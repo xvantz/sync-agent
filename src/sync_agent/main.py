@@ -62,7 +62,11 @@ def _init_platforms(
 def cli(ctx: click.Context, config: str, verbose: bool) -> None:
     """Sync Agent — synchronise repositories across Git platforms."""
     _setup_logging(verbose)
-    cfg = Config.from_file(config)
+    try:
+        cfg = Config.from_file(config)
+    except (FileNotFoundError, ValueError) as e:
+        click.echo(f"ERROR: {e}", err=True)
+        ctx.exit(1)
     ctx.ensure_object(dict)
     ctx.obj["cfg"] = cfg
 
