@@ -160,7 +160,6 @@ in
       after = [ "network.target" ];
       serviceConfig = {
         Type = "oneshot";
-        DynamicUser = true;
         ExecStart = "${cfg.package}/bin/sync-agent -c ${effectiveConfig} import";
         Restart = "on-failure";
       } // lib.optionalAttrs (envFiles != []) {
@@ -184,7 +183,6 @@ in
       after = [ "network.target" ];
       serviceConfig = {
         Type = "oneshot";
-        DynamicUser = true;
         ExecStart = "${cfg.package}/bin/sync-agent -c ${effectiveConfig} run";
         Restart = "on-failure";
       } // lib.optionalAttrs (envFiles != []) {
@@ -208,7 +206,6 @@ in
       after = [ "network.target" ];
       wantedBy = [ "multi-user.target" ];
       serviceConfig = {
-        DynamicUser = true;
         ExecStart = "${cfg.package}/bin/sync-agent -c ${effectiveConfig} webhook --port ${toString cfg.autoCreate.port}";
         Restart = "always";
         RestartSec = "5";
