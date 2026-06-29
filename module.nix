@@ -215,6 +215,29 @@ in
       } // lib.optionalAttrs (envFiles != []) {
         EnvironmentFile = envFiles;
       };
+      # Register system webhook on first start
+      postStart = ''
+        WEBHOOK_URL="http://127.0.0.1:9123"
+        # Check if webhook already registered
+        EXISTING=$(${pkgs.curl}/bin/curl -sf \
+          -H "Authorization: token ''${FORGEJO_TOKEN}" \
+          "http://localhost:2000/api/v1/admin/hooks" \
+          | ${pkgs.python3}/bin/python3 -c "
+import sys, json
+hooks = json.load(sys.stdin)
+for h in hooks:
+    if h.get('url') == '$WEBHOOK_URL':
+        print('exists')
+" 2>/dev/null || true)
+        if [ "$EXISTING" != "exists" ] && [ -n "$FORGEJO_TOKEN" ]; then
+          ${pkgs.curl}/bin/curl -sf -X POST \
+            -H "Authorization: token ''${FORGEJO_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d '{"type":"forgejo","config":{"url":"http://127.0.0.1:9123","content_type":"json"},"events":["repository"],"active":true}' \
+            "http://localhost:2000/api/v1/admin/hooks" \
+            && echo "✓ System webhook registered" || true
+        fi
+      '';
     };
   });
 }
