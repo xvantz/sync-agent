@@ -283,3 +283,29 @@ def serve(ctx: click.Context, port: int, host: str) -> None:
         forgejo.close()
         for p in platforms.values():
             p.close()
+
+
+@cli.command()
+@click.option("--url", default="http://127.0.0.1:9124/sync/push", help="Webhook target URL")
+@click.pass_context
+def setup_webhook(ctx: click.Context, url: str) -> None:
+    """Register a Forgejo system webhook that triggers push mirror sync on every push."""
+    cfg: Config = ctx.obj["cfg"]
+    forgejo = ForgejoClient(cfg.forgejo_url, cfg.forgejo_token)
+    try:
+        logger.info("Registering system webhook: %s", url)
+
+        # Check if already exists
+        existing = forgejo.list_system_webhooks()
+        for hook in existing:
+            if hook.get("url") == url:
+                logger.info("  Webhook already exists (id=%s)", hook["id"])
+                return
+
+        result = forgejo.create_system_webhook(
+            url=url, events=["push"],
+        )
+        logger.info("  ✓ System webhook registered (id=%s)", result.get("id"))
+        logger.info("  Now every push to any Forgejo repo will trigger push mirror sync!")
+    finally:
+        forgejo.close()

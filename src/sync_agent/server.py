@@ -131,6 +131,10 @@ class SyncAPIHandler(BaseHTTPRequestHandler):
                 setup_count = pusher.run(diff, dry_run=False)
                 result["push_mirrors_set"] = setup_count
 
+                # Also sync ALL existing mirrors so code is pushed immediately
+                synced = pusher.sync_all_mirrors()
+                result["push_mirrors_synced"] = synced
+
             self._json(200, result)
         except Exception as e:
             logger.error("Sync failed: %s", e)

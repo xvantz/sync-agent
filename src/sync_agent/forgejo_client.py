@@ -145,7 +145,7 @@ class ForgejoClient:
             f"/api/v1/repos/{owner}/{repo}/push_mirrors/{mirror_name}"
         )
 
-    # ── webhook management ──────────────────────────────────────────
+    # ── webhooks ──────────────────────────────────────────────────────
 
     def list_webhooks(self, owner: str, repo: str) -> list[dict]:
         return self._client.get(f"/api/v1/repos/{owner}/{repo}/hooks")
@@ -169,6 +169,31 @@ class ForgejoClient:
         return self._client.post(
             f"/api/v1/repos/{owner}/{repo}/hooks", json=payload
         )
+
+    def list_system_webhooks(self) -> list[dict]:
+        """List all system-wide webhooks."""
+        return self._client.get("/api/v1/admin/hooks")
+
+    def create_system_webhook(
+        self,
+        url: str,
+        events: list[str],
+        *,
+        secret: str = "",
+    ) -> dict:
+        """Register a system-wide webhook (catches events for ALL repos)."""
+        payload = {
+            "type": "forgejo",
+            "url": url,
+            "events": events,
+            "secret": secret,
+            "active": True,
+        }
+        return self._client.post("/api/v1/admin/hooks", json=payload)
+
+    def delete_system_webhook(self, hook_id: int) -> None:
+        """Remove a system-wide webhook."""
+        self._client.delete(f"/api/v1/admin/hooks/{hook_id}")
 
     # ── user / org info ──────────────────────────────────────────────
 
