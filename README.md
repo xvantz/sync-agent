@@ -80,7 +80,7 @@ Cloud platforms (GitHub, Codeberg, GitLab)
 Then:
 
 ```bash
-nix flake lock --update-input sync-agent
+nix flake update sync-agent
 nh os switch
 
 # Check status
