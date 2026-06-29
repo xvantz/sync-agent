@@ -162,10 +162,15 @@ class ForgejoClient:
         payload = {
             "type": "forgejo",
             "url": url,
+            "config": {
+                "url": url,
+                "content_type": "json",
+            },
             "events": events,
-            "secret": secret,
             "active": True,
         }
+        if secret:
+            payload["config"]["secret"] = secret
         return self._client.post(
             f"/api/v1/repos/{owner}/{repo}/hooks", json=payload
         )
