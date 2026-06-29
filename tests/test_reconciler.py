@@ -116,7 +116,7 @@ class TestReconciler:
         forgejo._client.get = Mock(return_value=fj_repos)
         forgejo._client.post = Mock()
 
-        # hashgrid has push mirror to github, coolcontrol has none
+        # hashgrid has push mirror to github (with sync_on_commit), coolcontrol has none
         def _list_mirrors(owner: str, repo: str) -> list[dict]:
             if repo == "hashgrid":
                 return [
@@ -125,6 +125,7 @@ class TestReconciler:
                         "remote_address": (
                             "git@github.com:xvantz/hashgrid.git"
                         ),
+                        "sync_on_commit": True,
                     }
                 ]
             return []

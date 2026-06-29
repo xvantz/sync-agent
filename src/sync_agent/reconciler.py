@@ -87,7 +87,8 @@ class Reconciler:
         for m in mirrors:
             if target_platform in m.get("remote_address", ""):
                 has_target = True
-                # Check if the mirror has a non-transient error
+
+                # Check if the mirror has a non-transient error → needs re-create
                 last_error = m.get("last_error", "")
                 if last_error and "Repository not found" in last_error:
                     logger.info(
@@ -95,7 +96,16 @@ class Reconciler:
                         fj_repo.full_name, target_platform,
                     )
                     has_target = False
-                break
+                    break
+
+                # Check if sync_on_commit is off — need to re-create to enable it
+                if not m.get("sync_on_commit", False):
+                    logger.info(
+                        "Push mirror for %s to %s has sync_on_commit=False, will re-create",
+                        fj_repo.full_name, target_platform,
+                    )
+                    has_target = False
+                    break
 
         logger.debug(
             "Push mirrors for %s: %d mirrors, has %s: %s",

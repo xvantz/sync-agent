@@ -168,7 +168,7 @@ class Pusher:
                     count += 1
                     continue
 
-                # Remove existing broken mirrors to this target before adding new one
+                # Remove existing broken/stale mirrors to this target before adding new one
                 try:
                     existing = self._forgejo.list_push_mirrors(
                         fj_repo.owner, fj_repo.name
@@ -176,10 +176,18 @@ class Pusher:
                     for m in existing:
                         if target in m.get("remote_address", ""):
                             err = m.get("last_error", "")
-                            if err and "Repository not found" in err:
+                            soc = m.get("sync_on_commit", False)
+                            if (
+                                (err and "Repository not found" in err)
+                                or not soc
+                            ):
+                                if err and "Repository not found" in err:
+                                    reason = "broken (target repo missing)"
+                                else:
+                                    reason = "stale (sync_on_commit=False)"
                                 logger.info(
-                                    "  Removing broken push mirror for %s",
-                                    target,
+                                    "  Removing %s push mirror for %s",
+                                    reason, target,
                                 )
                                 self._forgejo.remove_push_mirror(
                                     fj_repo.owner,
