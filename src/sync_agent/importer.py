@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 class Importer:
-    """Import missing repos from cloud platforms into Forgejo as Pull Mirrors."""
+    """Import missing repos from cloud platforms into Forgejo as regular repos (with push mirror)."""
 
     def __init__(
         self,
@@ -68,7 +68,7 @@ class Importer:
                 result = self._forgejo.migrate_repo(
                     clone_addr=clone_url,
                     repo_name=cloud_repo.name,
-                    mirror=True,
+                    mirror=False,
                     private=cloud_repo.private,
                     description=cloud_repo.description,
                     auth_token=platform_token,

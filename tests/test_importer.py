@@ -48,7 +48,7 @@ class TestImporter:
         forgejo.migrate_repo.assert_called_once_with(
             clone_addr="https://github.com/xvantz/test-repo.git",
             repo_name="test-repo",
-            mirror=True,
+            mirror=False,
             private=True,
             description="A test repo",
             auth_token=None,
