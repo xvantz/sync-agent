@@ -347,3 +347,62 @@ def setup_webhook(ctx: click.Context, url: str, sync_all: bool) -> None:
             logger.info("Use --sync-all to register on all repos")
     finally:
         forgejo.close()
+
+
+@cli.command()
+@click.argument("repo", metavar="OWNER/REPO")
+@click.option("--force", "-f", is_flag=True, help="Skip confirmation prompt")
+@click.pass_context
+def delete(ctx: click.Context, repo: str, force: bool) -> None:
+    """Delete a repository from ALL connected platforms.
+
+    Removes the repo from Forgejo and every configured platform (GitHub, etc.).
+    The repo must already exist in Forgejo to be deleted.
+    """
+    cfg: Config = ctx.obj["cfg"]
+    forgejo = ForgejoClient(cfg.forgejo_url, cfg.forgejo_token)
+    platforms = _init_platforms(cfg)
+    try:
+        if "/" not in repo:
+            click.echo(
+                "ERROR: Use OWNER/REPO format (e.g. xvantz/my-repo)",
+                err=True,
+            )
+            ctx.exit(1)
+
+        owner, name = repo.split("/", 1)
+
+        # Check repo exists on Forgejo
+        if not forgejo.repo_exists(owner, name):
+            click.echo(f"✗ Repo {owner}/{name} not found on Forgejo", err=True)
+            ctx.exit(1)
+
+        if not force:
+            platforms_str = ", ".join(
+                [f"Forgejo"] + list(platforms.keys())
+            )
+            click.echo(
+                f"Will delete {owner}/{name} from: {platforms_str}"
+            )
+            click.confirm("Continue?", abort=True)
+
+        # 1. Delete from Forgejo first
+        forgejo.delete_repo(owner, name)
+        click.echo(f"  ✓ Deleted from Forgejo")
+
+        # 2. Delete from all configured cloud platforms
+        for p_name, provider in platforms.items():
+            try:
+                if provider.delete_repo(owner, name):
+                    click.echo(f"  ✓ Deleted from {p_name}")
+                else:
+                    click.echo(f"  - Not found on {p_name}")
+            except Exception as e:
+                click.echo(f"  ✗ Failed on {p_name}: {e}")
+
+        click.echo(f"\n✓ {owner}/{name} deleted from all platforms")
+
+    finally:
+        forgejo.close()
+        for p in platforms.values():
+            p.close()

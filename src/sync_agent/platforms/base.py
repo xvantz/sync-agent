@@ -44,6 +44,18 @@ class PlatformProvider(ABC):
     def repo_exists(self, name: str, owner: str | None = None) -> bool:
         """Check if a repository already exists."""
 
+    @abstractmethod
+    def delete_repo(self, owner: str, name: str) -> bool:
+        """Delete a repository from this platform.
+
+        Args:
+            owner: Repository owner (user or org).
+            name: Repository name.
+
+        Returns:
+            True if deleted, False if it didn't exist.
+        """
+
     def ssh_push_url(self, repo: PlatformRepo) -> str:
         """Return the SSH URL suitable for use as a push mirror target."""
         # Default: git@github.com:owner/repo.git

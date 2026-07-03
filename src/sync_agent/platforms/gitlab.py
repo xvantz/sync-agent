@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 from typing import Any
+from urllib.parse import quote
+
+import httpx
 
 from sync_agent.platforms.base import PlatformProvider, PlatformRepo
 from sync_agent.retry import AsyncRetryClient
@@ -52,6 +55,17 @@ class GitLabProvider(PlatformProvider):
             return any(p["path"] == name for p in data)
         except Exception:
             return False
+
+    def delete_repo(self, owner: str, name: str) -> bool:
+        """Delete a repository from GitLab."""
+        encoded = quote(f"{owner}/{name}", safe="")
+        try:
+            self._client.delete(f"/projects/{encoded}")
+            return True
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                return False
+            raise
 
     def ssh_push_url(self, repo: PlatformRepo) -> str:
         return f"git@gitlab.com:{repo.owner}/{repo.name}.git"

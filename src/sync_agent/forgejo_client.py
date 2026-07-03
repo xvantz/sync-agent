@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+import httpx
+
 from sync_agent.retry import AsyncRetryClient
 
 
@@ -58,6 +60,16 @@ class ForgejoClient:
             return True
         except Exception:
             return False
+
+    def delete_repo(self, owner: str, repo: str) -> bool:
+        """Delete a repository from Forgejo."""
+        try:
+            self._client.delete(f"/api/v1/repos/{owner}/{repo}")
+            return True
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                return False
+            raise
 
     def create_repo(
         self,

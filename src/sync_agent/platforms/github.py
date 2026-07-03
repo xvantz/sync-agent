@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+import httpx
+
 from sync_agent.platforms.base import PlatformProvider, PlatformRepo
 from sync_agent.retry import AsyncRetryClient
 
@@ -60,6 +62,16 @@ class GitHubProvider(PlatformProvider):
             return any(r["name"] == name for r in items)
         except Exception:
             return False
+
+    def delete_repo(self, owner: str, name: str) -> bool:
+        """Delete a repository from GitHub."""
+        try:
+            self._client.delete(f"/repos/{owner}/{name}")
+            return True
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                return False
+            raise
 
     def ssh_push_url(self, repo: PlatformRepo) -> str:
         return f"git@github.com:{repo.owner}/{repo.name}.git"
