@@ -124,6 +124,9 @@ def run(ctx: click.Context, dry_run: bool) -> None:
             imported = importer.run(diff, dry_run=dry_run)
             if not dry_run:
                 logger.info("Imported %d repos", imported)
+                # Re-discover after import so missing_push_mirrors includes
+                # newly imported repos (they weren't in Forgejo at step 1)
+                diff = reconciler.discover()
             else:
                 logger.info("Would import %d repos", imported)
         else:

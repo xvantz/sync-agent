@@ -120,6 +120,7 @@ class Reconciler:
                 result.missing_push_mirrors
             ):
                 if existing_repo.name == fj_repo.name:
-                    result.missing_push_mirrors[i][1].append(target_platform)
+                    if target_platform not in missing_targets:
+                        result.missing_push_mirrors[i][1].append(target_platform)
                     return
             result.missing_push_mirrors.append((fj_repo, [target_platform]))
